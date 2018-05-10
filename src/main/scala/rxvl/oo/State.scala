@@ -4,7 +4,11 @@ object model {
   sealed trait Command
   case class NoOp(id: String) extends Command
   case class Candidate(id: Int)
-  case class Term(id: Int)
+  case class Term(id: Int) {
+    def lt(other: Term): Boolean = id < other.id
+
+  }
+
   case class LogIndex(id: Int) {
     def gt(other: LogIndex): Boolean = id > other.id
     def min(other: LogIndex): LogIndex = if (id < other.id) this else other
@@ -14,7 +18,7 @@ object model {
   case class Log(entries: Vector[LogEntry]) {
     def lastIndex = LogIndex(entries.length - 1)
     def replaceAfter(logIndex: LogIndex, newLog: Seq[LogEntry]): Log =
-      copy(entries = entries.take(logIndex.id) ++ newLog)
+      copy(entries = entries.take(logIndex.id + 1) ++ newLog)
     def after(logIndex: LogIndex): Vector[LogEntry] = entries.drop(logIndex.id)
     def entryAt(logIndex: LogIndex) =  entries.lift(logIndex.id)
   }
@@ -108,38 +112,40 @@ object HandleAppendEntries {
     leaderCommit: LogIndex // leader's commitIndex
   )
 
-  case class Results(
+  sealed trait Results
+  case object OldLeader extends Results
+  case class LogsDontMatch(logIndex: LogIndex, onFollower: Term, fromRPC: Term) extends Results
+
+  case class Success(
     term: Term, // currentTerm, for leader to update itself
-    success: Boolean // true if follower contained entry matching prevLogIndex and prevLogTerm
-  )
+    newCommitIndex: LogIndex,
+    newLastIndex: LogIndex
+  ) extends Results
 
   def apply(args: Arguments, followerServerState: FollowerServerState): Results = {
     val currentTerm = followerServerState.currentTerm.get.get
     val log = followerServerState.log.get.get
-    Results(
-      term = currentTerm,
-      success = {
-        // Reply false if term < currentTerm
-        if (args.term.id < currentTerm.id) false
-        // Reply false if log doesn't contain an entry with term == prevLogTerm at prevLogIndex
-        else {
-          if (log.entryAt(args.prevLogIndex).exists(_.term == args.prevLogTerm)) false
-          else {
-            val newLog = zipOpt(log.after(args.prevLogIndex), args.entries).map {
-              case (Some(fromLog), Some(fromArg)) ⇒ fromArg
-              case (Some(fromLog), None) ⇒ fromLog
-              case (None, Some(fromArg)) ⇒ fromArg
-              case (None, None) ⇒ ??? // shouldn't happen
-            }
-            followerServerState.log.update(_.replaceAfter(args.prevLogIndex, newLog))
-            val newLastIndex = followerServerState.log.get.get.lastIndex
-            if (args.leaderCommit gt followerServerState.commitIndex.get.get)
-              followerServerState.commitIndex.set(args.leaderCommit.min(newLastIndex))
-            true
-          }
+    val commitIndex = followerServerState.commitIndex.get.get
+    // Reply false if term < currentTerm
+    if (args.term lt currentTerm) OldLeader
+    // Reply false if log doesn't contain an entry with term == prevLogTerm at prevLogIndex
+    else {
+      val identifyingLogEntry = log.entryAt(args.prevLogIndex)
+      if (!identifyingLogEntry.exists(_.term == args.prevLogTerm)) LogsDontMatch(args.prevLogIndex, identifyingLogEntry.get.term, args.prevLogTerm)
+      else {
+        val newLog = zipOpt(log.after(args.prevLogIndex), args.entries).map {
+          case (_, Some(fromArg)) ⇒ fromArg
+          case (Some(fromLog), None) ⇒ fromLog
+          case (None, None) ⇒ ??? // shouldn't happen
         }
+        followerServerState.log.update(_.replaceAfter(args.prevLogIndex, newLog))
+        val newLastIndex = followerServerState.log.get.get.lastIndex
+        val newCommitIndex = args.leaderCommit.min(newLastIndex)
+        if (args.leaderCommit gt commitIndex)
+          followerServerState.commitIndex.set(newCommitIndex)
+        Success(currentTerm, newCommitIndex, newLastIndex)
       }
-    )
+    }
   }
 
   private def zipOpt[A, B](s1: Seq[A], s2: Seq[B]): Seq[(Option[A], Option[B])] =

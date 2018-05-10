@@ -20,6 +20,10 @@ val fs2Deps = Seq(
 val scalaTestDeps = Seq(
   "org.scalactic" %% "scalactic",
   "org.scalatest" %% "scalatest"
-).map(_  % "3.0.5" % "test")
+).map(_  % "3.0.5")
 
-libraryDependencies ++= (fs2Deps ++ circeDeps ++ scalaTestDeps :+ catsDep)
+val diff = "ai.x" %% "diff" % "2.0"
+
+val testDeps = (scalaTestDeps :+ diff).map(_ % "test")
+
+libraryDependencies ++= (fs2Deps ++ circeDeps ++ testDeps :+ catsDep)
