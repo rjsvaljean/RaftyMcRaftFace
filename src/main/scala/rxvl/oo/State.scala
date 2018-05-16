@@ -113,7 +113,7 @@ object HandleAppendEntries {
   )
 
   sealed trait Results
-  case object OldLeader extends Results
+  case class OldLeader(currentTerm: Term) extends Results
   case class LogsDontMatch(logIndex: LogIndex, onFollower: Term, fromRPC: Term) extends Results
 
   case class Success(
@@ -127,7 +127,7 @@ object HandleAppendEntries {
     val log = followerServerState.log.get.get
     val commitIndex = followerServerState.commitIndex.get.get
     // Reply false if term < currentTerm
-    if (args.term lt currentTerm) OldLeader
+    if (args.term lt currentTerm) OldLeader(currentTerm)
     // Reply false if log doesn't contain an entry with term == prevLogTerm at prevLogIndex
     else {
       val identifyingLogEntry = log.entryAt(args.prevLogIndex)
