@@ -1,6 +1,5 @@
 package rxvl.oo
 
-import org.scalatest.{AppendedClues, FlatSpec, MustMatchers}
 import rxvl.oo.HandleAppendEntries._
 import rxvl.oo.model._
 import ai.x.diff.DiffShow
@@ -8,13 +7,8 @@ import ai.x.diff.conversions._
 
 import scala.language.implicitConversions
 
-class AppendEntriesRPCSpec extends FlatSpec with MustMatchers with AppendedClues {
+class AppendEntriesRPCSpec extends RaftSpec {
   behavior of HandleAppendEntries.getClass.getSimpleName
-
-  implicit def intToLogIndex(i: Int): LogIndex = LogIndex(i)
-  implicit def intToTerm(i: Int): Term = Term(i)
-  implicit def pairToLogEntry(pair: (Int, Command)): LogEntry = LogEntry(pair._1, pair._2)
-  def cmd(index: String): Command = NoOp(index)
 
   it should "append entries in the normal case" in {
     val startLogState = Log(Vector(
@@ -76,22 +70,4 @@ class AppendEntriesRPCSpec extends FlatSpec with MustMatchers with AppendedClues
     HandleAppendEntries(argument, serverState) must be(OldLeader(2))
   }
 
-  private def createFollowerState(log: Log) = {
-    val serverState = new FollowerServerState
-    val (LogEntry(term, _), lastIndex) = log.entries.zipWithIndex.last
-    serverState.commitIndex.set(lastIndex)
-    serverState.lastApplied.set(lastIndex)
-    serverState.log.set(log) // Follower has applied and committed the first 4 log entries as well
-    serverState.currentTerm.set(term)
-    serverState
-  }
-
-  private def createFollowerState(commitIndex: LogIndex, lastApplied: LogIndex, currentTerm: Term, log: Log) = {
-    val serverState = new FollowerServerState
-    serverState.commitIndex.set(commitIndex)
-    serverState.lastApplied.set(lastApplied)
-    serverState.log.set(log) // Follower has applied and committed the first 4 log entries as well
-    serverState.currentTerm.set(currentTerm)
-    serverState
-  }
 }

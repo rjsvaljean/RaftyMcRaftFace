@@ -10,6 +10,7 @@ object model {
   }
 
   case class LogIndex(id: Int) {
+    def gte(other: LogIndex): Boolean = gt(other) || this == other
     def gt(other: LogIndex): Boolean = id > other.id
     def min(other: LogIndex): LogIndex = if (id < other.id) this else other
     def inc: LogIndex = copy(id = id + 1)
@@ -150,6 +151,49 @@ object HandleAppendEntries {
 
   private def zipOpt[A, B](s1: Seq[A], s2: Seq[B]): Seq[(Option[A], Option[B])] =
     s1.map(Option(_)).zipAll(s2.map(Option(_)), None, None)
+}
+
+object HandleRequestVote {
+  import model._
+  import modelJson._
+
+  case class Arguments(
+    term: Term, // candidate's term
+    candidateId: Candidate, // candidate requesting vote
+    lastLogIndex: LogIndex, // index of candidate's last long entry
+    lastLogTerm: Term // term of candidate's last log entry
+  )
+
+  sealed trait Results
+  case class Ineligible(currentTerm: Term) extends Results // §5.1
+  case object VoteGranted extends Results
+  case class VoteNotGranted(
+    notYetVotedOrAlreadyVotedForThisCandidate: Boolean,
+    candidatesLogIsAtLeastAsUpToDateAsReceiversLog: Boolean
+  ) extends Results // §5.2, §5.4
+
+  case class Inputs(
+    term: Term,
+    candidateId: Candidate,
+    lastLogIndex: LogIndex,
+    lastLOgTerm: Term
+  )
+
+  def apply(args: Arguments, followerServerState: FollowerServerState): Results = {
+    val currentTerm = followerServerState.currentTerm.get.get
+    val votedFor = followerServerState.votedFor.get.get.candidate
+    val receiversLog = followerServerState.log.get.get
+    val receiversLastLogIndex = receiversLog.lastIndex
+
+
+    val candidatesLogIsAtLeastAsUpToDateAsReceiversLog = args.lastLogIndex gte receiversLastLogIndex
+    if (args.term lt currentTerm) Ineligible(currentTerm)
+    else {
+      val notYetVotedOrAlreadyVotedForThisCandidate = votedFor.forall(_ == args.candidateId)
+      if (notYetVotedOrAlreadyVotedForThisCandidate && candidatesLogIsAtLeastAsUpToDateAsReceiversLog) VoteGranted
+      else VoteNotGranted(notYetVotedOrAlreadyVotedForThisCandidate, candidatesLogIsAtLeastAsUpToDateAsReceiversLog)
+    }
+  }
 }
 
 class FollowerServerState extends AllServerState
