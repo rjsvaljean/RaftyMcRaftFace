@@ -1,6 +1,7 @@
 package rxvl
 
 import java.nio.file.Paths
+import java.util.concurrent.ConcurrentHashMap
 
 import cats.Show
 import cats.syntax.show._
@@ -9,6 +10,8 @@ import cats.effect.IO
 import fs2.StreamApp.ExitCode
 import fs2.text.{lines, utf8Decode}
 import fs2.{Pipe, Stream, StreamApp}
+import rxvl.Sim.{AddServer, AppendEntries, RequestVote, Tick}
+import rxvl.oo.{AllServerState, FollowerServerState, HandleAppendEntries, HandleRequestVote}
 
 object Sim {
   import io.circe.generic.semiauto._
@@ -85,12 +88,30 @@ object Main extends StreamApp[cats.effect.IO] {
   def readFromFile(file: String): Stream[IO, String] = toLines(fs2.io.file.readAll[IO](Paths.get(file), 10))
 
 
-  def readFromFileAndProcess(file: String): Stream[IO, Sim.Command] = andProcess(readFromFile(file))
-  def readFromStdInAndProcess: Stream[IO, Sim.Command] = andProcess(stdInLines)
+  def readFromFileAndProcess(file: String): Stream[IO, Unit] = andProcess(readFromFile(file))
+  def readFromStdInAndProcess: Stream[IO, Unit] = andProcess(stdInLines)
 
-  def andProcess(input: Stream[IO, String]): Stream[IO, Sim.Command] =
+  def andProcess(input: Stream[IO, String]): Stream[IO, Unit] =
     input
       .through(printLine[String])
       .evalMap(deserialize)
       .through(printLine[Sim.Command])
+      .through(process)
+
+  def process: Pipe[IO, Sim.Command, Unit] = commands ⇒ Stream.bracket(
+    IO(new ConcurrentHashMap[Int, AllServerState]())
+  )(use = { servers ⇒
+    commands.evalMap {
+      case AddServer(id) =>
+        IO(servers.putIfAbsent(id, new FollowerServerState()))
+      case Tick =>
+        IO(())
+      case AppendEntries(id, cmd) =>
+        import scala.collection.JavaConverters._
+        println("servers.keys(): " + servers.keys().asScala.toList)
+        IO(HandleAppendEntries(cmd, servers.get(id).asInstanceOf[FollowerServerState]))
+      case RequestVote(id, cmd) =>
+        IO(HandleRequestVote(cmd, servers.get(id).asInstanceOf[FollowerServerState]))
+    }
+  }, release = _ ⇒ IO(()))
 }

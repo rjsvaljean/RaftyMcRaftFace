@@ -158,7 +158,8 @@ object HandleAppendEntries {
     // Reply false if log doesn't contain an entry with term == prevLogTerm at prevLogIndex
     else {
       val identifyingLogEntry = log.entryAt(args.prevLogIndex)
-      if (!identifyingLogEntry.exists(_.term == args.prevLogTerm)) LogsDontMatch(args.prevLogIndex, identifyingLogEntry.get.term, args.prevLogTerm)
+      if (!identifyingLogEntry.exists(_.term == args.prevLogTerm))
+        LogsDontMatch(args.prevLogIndex, identifyingLogEntry.get.term, args.prevLogTerm)
       else {
         val newLog = zipOpt(log.after(args.prevLogIndex), args.entries).map {
           case (_, Some(fromArg)) ⇒ fromArg
