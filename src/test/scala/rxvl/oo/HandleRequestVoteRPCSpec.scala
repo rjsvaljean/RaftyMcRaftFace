@@ -2,6 +2,7 @@ package rxvl.oo
 
 import rxvl.oo.HandleRequestVote._
 import rxvl.oo.model._
+import rxvl.oo.model.requestVote._
 
 class HandleRequestVoteRPCSpec extends RaftSpec {
   behavior of HandleRequestVote.getClass.getSimpleName

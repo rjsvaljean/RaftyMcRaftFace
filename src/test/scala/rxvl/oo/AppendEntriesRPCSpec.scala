@@ -1,7 +1,7 @@
 package rxvl.oo
 
-import rxvl.oo.HandleAppendEntries._
 import rxvl.oo.model._
+import rxvl.oo.model.appendEntries._
 import ai.x.diff.DiffShow
 import ai.x.diff.conversions._
 

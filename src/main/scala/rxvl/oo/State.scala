@@ -25,6 +25,44 @@ object model {
   }
   case class VotedFor(candidate: Option[Candidate])
   case class LogIndexPerServer(logIndexPerServer: Map[Int, LogIndex])
+
+  object appendEntries {
+    case class Arguments(
+      term: Term, // leader's term
+      leaderId: Int, // so follower can redirect clients
+      prevLogIndex: LogIndex, // index of log entry immediately preceding new ones
+      prevLogTerm: Term, // term of prevLogIndex entry
+      entries: Vector[LogEntry], // log entries to store (empty for heartbeat; may send more than one for efficiency)
+      leaderCommit: LogIndex // leader's commitIndex
+    )
+
+    sealed trait Results
+    case class OldLeader(currentTerm: Term) extends Results
+    case class LogsDontMatch(logIndex: LogIndex, onFollower: Term, fromRPC: Term) extends Results
+
+    case class Success(
+      term: Term, // currentTerm, for leader to update itself
+      newCommitIndex: LogIndex,
+      newLastIndex: LogIndex
+    ) extends Results
+  }
+
+  object requestVote {
+    case class Arguments(
+      term: Term, // candidate's term
+      candidateId: Candidate, // candidate requesting vote
+      lastLogIndex: LogIndex, // index of candidate's last long entry
+      lastLogTerm: Term // term of candidate's last log entry
+    )
+
+    sealed trait Results
+    case class Ineligible(currentTerm: Term) extends Results // §5.1
+    case object VoteGranted extends Results
+    case class VoteNotGranted(
+      notYetVotedOrAlreadyVotedForThisCandidate: Boolean,
+      candidatesLogIsAtLeastAsUpToDateAsReceiversLog: Boolean
+    ) extends Results // §5.2, §5.4
+  }
 }
 
 object modelJson {
@@ -55,6 +93,12 @@ object modelJson {
 
   implicit val LogIndexPerServerDecoder: Decoder[LogIndexPerServer] = deriveDecoder[LogIndexPerServer]
   implicit val LogIndexPerServerEncoder: Encoder[LogIndexPerServer] = deriveEncoder[LogIndexPerServer]
+
+  implicit val appendEntriesArgumentsDecoder: Decoder[appendEntries.Arguments] = deriveDecoder[appendEntries.Arguments]
+  implicit val appendEntriesArgumentsEncoder: Encoder[appendEntries.Arguments] = deriveEncoder[appendEntries.Arguments]
+
+  implicit val requestVoteArgumentsDecoder: Decoder[requestVote.Arguments] = deriveDecoder[requestVote.Arguments]
+  implicit val requestVoteArgumentsEncoder: Encoder[requestVote.Arguments] = deriveEncoder[requestVote.Arguments]
 }
 
 
@@ -103,25 +147,7 @@ class LeaderServerState extends AllServerState {
 object HandleAppendEntries {
   import model._
   import modelJson._
-
-  case class Arguments(
-    term: Term, // leader's term
-    leaderId: Int, // so follower can redirect clients
-    prevLogIndex: LogIndex, // index of log entry immediately preceding new ones
-    prevLogTerm: Term, // term of prevLogIndex entry
-    entries: Vector[LogEntry], // log entries to store (empty for heartbeat; may send more than one for efficiency)
-    leaderCommit: LogIndex // leader's commitIndex
-  )
-
-  sealed trait Results
-  case class OldLeader(currentTerm: Term) extends Results
-  case class LogsDontMatch(logIndex: LogIndex, onFollower: Term, fromRPC: Term) extends Results
-
-  case class Success(
-    term: Term, // currentTerm, for leader to update itself
-    newCommitIndex: LogIndex,
-    newLastIndex: LogIndex
-  ) extends Results
+  import appendEntries._
 
   def apply(args: Arguments, followerServerState: FollowerServerState): Results = {
     val currentTerm = followerServerState.currentTerm.get.get
@@ -156,28 +182,7 @@ object HandleAppendEntries {
 object HandleRequestVote {
   import model._
   import modelJson._
-
-  case class Arguments(
-    term: Term, // candidate's term
-    candidateId: Candidate, // candidate requesting vote
-    lastLogIndex: LogIndex, // index of candidate's last long entry
-    lastLogTerm: Term // term of candidate's last log entry
-  )
-
-  sealed trait Results
-  case class Ineligible(currentTerm: Term) extends Results // §5.1
-  case object VoteGranted extends Results
-  case class VoteNotGranted(
-    notYetVotedOrAlreadyVotedForThisCandidate: Boolean,
-    candidatesLogIsAtLeastAsUpToDateAsReceiversLog: Boolean
-  ) extends Results // §5.2, §5.4
-
-  case class Inputs(
-    term: Term,
-    candidateId: Candidate,
-    lastLogIndex: LogIndex,
-    lastLOgTerm: Term
-  )
+  import requestVote._
 
   def apply(args: Arguments, followerServerState: FollowerServerState): Results = {
     val currentTerm = followerServerState.currentTerm.get.get

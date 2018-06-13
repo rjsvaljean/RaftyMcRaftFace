@@ -15,7 +15,7 @@ val catsDep = "org.typelevel" %% "cats-core" % "1.0.1"
 val fs2Deps = Seq(
   "co.fs2" %% "fs2-core",
   "co.fs2" %% "fs2-io"
-).map(_ % "0.10.1")
+).map(_ % "0.10.4")
 
 val scalaTestDeps = Seq(
   "org.scalactic" %% "scalactic",
